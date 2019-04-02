@@ -1,0 +1,179 @@
+1.
+from PIL import Image
+import matplotlib.pyplot as plt
+import cv2
+import numpy as np
+import random
+import scipy
+from  scipy import  signal
+def gaussian_noise( img,me,sigma):
+    np.random.seed(0)
+    noise = np.random.normal(me, sigma, np.shape(img)[0] * np.shape(img)[1]).reshape((np.shape(img)[0], np.shape(img)[1]))
+    return (img + noise)
+def median_b(img_array1,n):
+    for i in range(0, 257-n):
+        for j in range(0, 257-n):
+            arr1 = img_array1[i:i+n,j:j+n]
+            a = np.median(arr1)
+            b=int((n-1)/2)
+            img_array1[i+b, j+b] =a
+    img1 = Image.fromarray(img_array1)
+    return img1
+
+
+def pepper_noise(img,pepper,salt):
+    img1 = img.copy()
+    [m,n] = np.shape(img)
+    np.random.seed(0)
+    noise = np.random.rand(m*n).reshape((m,n))
+    img1[noise <= pepper] = 0
+    img1[noise >= 1 - salt] = 255
+    return img1
+def inverse_harmonic_mean(img, q):
+    res = np.zeros_like(img)
+    img = cv2.copyMakeBorder(img,1,1,1,1,cv2.BORDER_CONSTANT, 0)
+    for i in range(1,img.shape[0]-1):
+        for j in range(1,img.shape[1]-1):
+            patch = img[i-1:i+2,j-1:j+2]
+            patch = patch.astype(np.float)
+            res[i-1, j-1] = np.mean(patch ** (q+1)) / np.mean(patch ** q)
+    return res.astype(np.uint8)
+img = np.array(Image.open('lena.bmp'))
+#img1= gaussian_noise(img,0,30)
+img1 =pepper_noise(img,0.1,0.1)
+imgshow = Image.fromarray(img1)
+
+
+img2 = cv2.GaussianBlur(img1,(7,7),1.8)
+#img3 = median_b(img1,3)
+img3 = inverse_harmonic_mean(img1, -1)
+img4 =cv2.blur(img1,(5,5))
+im1 = Image.fromarray(img2)
+im2 = Image.fromarray(img3)
+im3 = Image.fromarray(img4)
+"""
+img2 = cv2.GaussianBlur(img1,(7,7),1.8)
+img3 = median_b(img1,3)
+#img3 = inverse_harmonic_mean(img1, -1)
+img4 =cv2.blur(img1,(5,5))
+im1 = Image.fromarray(img2)
+im2 = Image.fromarray(img3)
+im3 = Image.fromarray(img4)
+imgshow.show()
+im1.show()
+img2.show()
+im3.show()
+"""
+plt.subplot(221), plt.title('gaussian noise'), plt.imshow(img1, 'gray')
+plt.subplot(222), plt.title('gaussian filter'), plt.imshow(img2, 'gray')
+plt.subplot(223), plt.title('inverse_harmonic_mean'), plt.imshow(img3, 'gray')
+plt.subplot(224), plt.title('blur filter'), plt.imshow(img4, 'gray')
+plt.show()
+
+
+2.
+# coding: utf-8
+import numpy as np
+from PIL import Image
+import math
+import cmath
+def motion_blur(img, a, b, T):
+    pad = np.pad(img, (0,img.shape[0]), 'constant')#tianchong
+    Fimage = np.fft.fft2(pad)
+    Fpad = np.fft.fftshift(Fimage)
+    [z1,z2] = np.shape(img)
+    m=2*z1
+    n=2*z2
+    h = np.zeros((m, n), dtype=np.complex)
+    for i in range(1, h.shape[0] + 1):
+        for j in range(1, h.shape[1] + 1):
+            h[i - 1, j - 1] = (T / np.pi / (a * i + b * j) * np.sin(np.pi * (a * i + b * j)) * np.exp(-1j * math.pi * (a * i + b * j)))
+    G = np.multiply(Fpad, h)
+    f = np.fft.ifftshift(G)
+    gshift = np.abs(np.fft.ifft2(f))
+    g = gshift[:img.shape[0], :img.shape[1]]
+    result = (g - np.min(g)) / (np.max(g) - np.min(g)) * 255
+    return result.astype(np.uint8),h
+def motion(img,a,T):
+    f_img = np.fft.fft2(img)
+    x, y = [i for i in range(1, np.shape(f_img)[0] + 1)], [i for i in range(1, np.shape(f_img)[1] + 1)]
+    X, Y = np.meshgrid(x, y)
+    h =(T/np.pi/a/X)*np.sin(np.pi*(X*a))*np.exp(-1j*math.pi*(a*X))
+    p = np.abs(np.fft.ifft2(f_img*h))
+    return p
+
+def n_gaussian( img,mean,sig):
+    np.random.seed(0)
+    noise = np.random.normal(mean, sig, np.shape(img)[0] * np.shape(img)[1]).reshape((np.shape(img)[0], np.shape(img)[1]))
+    return (img + noise)
+def filter_mean(h,img,K):
+    pad = np.pad(img, (0, img.shape[0]), 'constant')  # tianchong
+    Fimage = np.fft.fft2(pad)
+    Fpad = np.fft.fftshift(Fimage)
+    h1 = 1*(np.abs(h)**2)/h/(np.abs(h)**2+K)*Fpad
+    p =np.abs(np.fft.ifft2(np.fft.ifftshift(h1)))
+    g = p[:img.shape[0], :img.shape[1]]
+    result = (g - np.min(g)) / (np.max(g) - np.min(g)) * 255
+    return result.astype(np.uint8)
+
+def laplace(size):
+    u, v = [i for i in range(size[0])], [i for i in range(size[1])]
+    U, V = np.meshgrid(u, v)
+    H = 4 * np.pi**2 * (U**2 + V**2)
+    return H
+def blur_kernel(h, w, a, b, T):
+    H = np.zeros((h,w), dtype=np.complex)
+    for i in range(1, H.shape[0]+1):
+        for j in range(1, H.shape[1]+1):
+            H[i-1,j-1] = T / math.pi*(a*i + b*j) * math. \
+                            sin(math.pi * (a * i + b * j)) \
+                            * cmath.exp(-cmath.sqrt(-1) * math.pi * (a * i + b * j))
+    return H
+def yueshu(h,img,gama):
+    l = laplace(img.shape)
+    temp = np.fft.fftshift(np.fft.fft2(img))
+    new = np.conj(h) / (np.abs(h) ** 2 + gama * np.abs(l) ** 2)
+    g = np.abs(np.fft.ifft2(np.fft.ifftshift(temp * new)))
+    result = (g - np.min(g)) / (np.max(g) - np.min(g)) * 255
+    return result.astype(np.uint8)
+def center_distance_matrix(img):
+    centerX = img.shape[0] / 2
+    centerY = img.shape[1] / 2
+    cdm = np.zeros_like(img, dtype=np.float)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            cdm[i,j] = np.sqrt((i - centerX) ** 2 + (j - centerY) ** 2)
+    return cdm
+
+def constrained_least_square(img, gamma, *args):
+    a, b, T = args
+    G = np.fft.fft2(img)
+    H = blur_kernel(img.shape[0], img.shape[1], a, b, T)
+    power_spectrum = np.abs(H)**2
+    cdm = center_distance_matrix(G)
+    cdm = cdm.astype(np.complex)
+    laplace_kernel = 1 + 4 * (math.pi ** 2) * (cdm ** 2)
+    laplace_ps = np.abs(laplace_kernel) ** 2
+    F_re = (np.conj(H) / (power_spectrum + gamma * laplace_ps)) * G
+    res = np.real(np.fft.ifft2(F_re))
+    res = (res - np.min(res)) / (np.max(res) - np.min(res)) * 255
+    return res.astype(np.uint8)
+
+img = Image.open('lena.bmp')
+imgarray = np.array(img)
+
+im1,h1=motion_blur(imgarray,0.01,0.01,1)
+im2 = motion(img,0.05,1)
+im_noise = n_gaussian(im1,0,10)
+im_reslut1 = filter_mean(h1,im_noise,0.06)
+im_result2 = constrained_least_square(im_noise,7e-14, 0.01, 0.01, 1)
+
+
+photo1 = Image.fromarray(im_noise)
+photo2 = Image.fromarray(im1)
+photo3 = Image.fromarray(im_reslut1)
+photo4 = Image.fromarray(im_result2)
+photo1.show()
+#photo2.show()
+photo3.show()
+photo4.show()
